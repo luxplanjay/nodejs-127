@@ -49,6 +49,10 @@
 - PUT = PATCH + POST
 - Метод `Model.findOneAndUpdate()` з опцією `upsert: true`
 
+<!-- PATCH - якщо документ існує то оновити його, якщо не існує то повернути 404 -->
+<!-- PUT - якщо документ існує то оновити його, якщо не існує, створити -->
+<!-- PATCH/PUT = PATCH -->
+
 ## Послідовність заняття
 
 1. Реалізувати `GET /students` — отримати всі документи
@@ -56,5 +60,4 @@
 3. Реалізувати `POST /students` — створити документ через `Model.create()`
 4. Реалізувати `DELETE /students/:studentId` — видалити через `Model.findOneAndDelete()`
 5. Реалізувати `PATCH /students/:studentId` — часткове оновлення через `Model.findOneAndUpdate()`
-6. Реалізувати `PUT /students/:studentId` — повне оновлення з `upsert: true`
-7. Протестувати всі ендпоінти через Postman
+6. Протестувати всі ендпоінти через Postman
