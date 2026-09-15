@@ -27,6 +27,12 @@
 - `isValidObjectId` з Mongoose — перевірка чи є рядок валідним ObjectId
 - Валідатор `custom` у Joi — підключення власної логіки валідації
 
+```js
+const objectIdValidator = (value, helpers) => {
+  return !isValidObjectId(value) ? helpers.message("Invalid id format") : value;
+};
+```
+
 ## Послідовність заняття
 
 1. Пояснити навіщо потрібна валідація — показати що відбувається без неї

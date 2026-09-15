@@ -1,7 +1,12 @@
 import createHttpError from "http-errors";
 import { Student } from "../models/student.js";
 
+// page, perPage
+// GET api.com/users?page=2&perPage=10
 export const getStudents = async (req, res) => {
+  const { page = 1, perPage = 5 } = req.query;
+  console.log(page, perPage);
+
   const students = await Student.find();
   res.status(200).json(students);
 };
@@ -26,6 +31,7 @@ export const getStudentById = async (req, res) => {
 };
 
 export const createStudent = async (req, res) => {
+  console.log("createStudent");
   const student = await Student.create(req.body);
   res.status(201).json(student);
 };
