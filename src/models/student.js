@@ -29,4 +29,9 @@ const studentSchema = new Schema(
   },
 );
 
+studentSchema.index({
+  avgMark: 1,
+  gender: 1,
+});
+
 export const Student = model("Student", studentSchema);

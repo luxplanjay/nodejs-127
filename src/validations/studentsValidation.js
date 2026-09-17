@@ -5,6 +5,9 @@ export const getAllStudentsSchema = {
   [Segments.QUERY]: Joi.object({
     page: Joi.number().min(1),
     perPage: Joi.number().min(5).max(20),
+    minMark: Joi.number().min(1),
+    gender: Joi.string().valid("male", "female", "other"),
+    search: Joi.string().trim().allow(""),
   }),
 };
 

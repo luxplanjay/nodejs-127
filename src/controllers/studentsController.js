@@ -2,11 +2,40 @@ import createHttpError from "http-errors";
 import { Student } from "../models/student.js";
 
 export const getStudents = async (req, res) => {
-  const { page = 1, perPage = 5 } = req.query;
-  console.log(page, perPage);
+  const { page = 1, perPage = 5, minMark, gender, search } = req.query;
+  const skip = (page - 1) * perPage;
+  const limit = perPage;
 
-  const students = await Student.find();
-  res.status(200).json(students);
+  const studentsQuery = Student.find();
+
+  if (minMark) {
+    studentsQuery.where("avgMark").gte(minMark);
+  }
+
+  if (gender) {
+    studentsQuery.where("gender").equals(gender);
+  }
+
+  if (search) {
+    studentsQuery.where({
+      name: { $regex: search, $options: "i" },
+    });
+  }
+
+  const [totalItems, students] = await Promise.all([
+    studentsQuery.clone().countDocuments(),
+    studentsQuery.skip(skip).limit(limit),
+  ]);
+
+  const totalPages = Math.ceil(totalItems / perPage);
+
+  res.status(200).json({
+    students,
+    page,
+    perPage,
+    totalItems,
+    totalPages,
+  });
 };
 
 export const getStudentById = async (req, res) => {
