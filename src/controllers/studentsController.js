@@ -6,7 +6,7 @@ export const getStudents = async (req, res) => {
   const skip = (page - 1) * perPage;
   const limit = perPage;
 
-  const studentsQuery = Student.find();
+  const studentsQuery = Student.find({ userId: req.user._id });
 
   if (minMark) {
     studentsQuery.where("avgMark").gte(minMark);
@@ -41,7 +41,10 @@ export const getStudents = async (req, res) => {
 export const getStudentById = async (req, res) => {
   const { studentId } = req.params;
 
-  const student = await Student.findOne({ _id: studentId });
+  const student = await Student.findOne({
+    _id: studentId,
+    userId: req.user._id,
+  });
   if (!student) {
     throw createHttpError(404, "Student not found");
   }
@@ -50,14 +53,19 @@ export const getStudentById = async (req, res) => {
 };
 
 export const createStudent = async (req, res) => {
-  console.log("createStudent");
-  const student = await Student.create(req.body);
+  const student = await Student.create({
+    ...req.body,
+    userId: req.user._id,
+  });
   res.status(201).json(student);
 };
 
 export const deleteStudent = async (req, res) => {
   const { studentId } = req.params;
-  const student = await Student.findOneAndDelete({ _id: studentId });
+  const student = await Student.findOneAndDelete({
+    _id: studentId,
+    userId: req.user._id,
+  });
   if (!student) {
     throw createHttpError(404, "Student not found");
   }
@@ -67,9 +75,13 @@ export const deleteStudent = async (req, res) => {
 
 export const updateStudent = async (req, res) => {
   const { studentId } = req.params;
-  const student = await Student.findOneAndUpdate({ _id: studentId }, req.body, {
-    returnDocument: "after",
-  });
+  const student = await Student.findOneAndUpdate(
+    { _id: studentId, userId: req.user._id },
+    req.body,
+    {
+      returnDocument: "after",
+    },
+  );
 
   if (!student) {
     throw createHttpError(404, "Student not found");
