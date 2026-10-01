@@ -1,0 +1,565 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "nodejs-127",
+    "version": "1.0.0",
+    "description": "Students API: cookie-session authentication, password reset by email, students CRUD and user avatar upload."
+  },
+  "servers": [
+    { "url": "http://localhost:3005", "description": "Local server (PORT from .env)" }
+  ],
+  "tags": [
+    { "name": "Auth", "description": "Registration, login, session refresh and password reset" },
+    { "name": "Students", "description": "Students owned by the authenticated user" },
+    { "name": "Users", "description": "Current user profile" }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Register a new user",
+        "description": "Creates a user with a bcrypt-hashed password, creates a session and sets the sessionId, accessToken and refreshToken cookies.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RegisterUserBody" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created. Session cookies are set.",
+            "headers": { "Set-Cookie": { "$ref": "#/components/headers/SetSessionCookies" } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/User" } } }
+          },
+          "400": {
+            "description": "Validation error, or the email is already in use (message \"Email in use\")",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/ValidationError" },
+                    { "$ref": "#/components/schemas/Error" }
+                  ]
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Log in",
+        "description": "Verifies email and password, creates a session and sets the sessionId, accessToken and refreshToken cookies.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/LoginUserBody" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logged in. Session cookies are set.",
+            "headers": { "Set-Cookie": { "$ref": "#/components/headers/SetSessionCookies" } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/User" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": {
+            "description": "Unknown email or wrong password (message \"Invalid credentials\")",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Log out",
+        "description": "Deletes the session identified by the sessionId cookie (if present) and clears all session cookies. Always succeeds, even without a session. No request validation.",
+        "responses": {
+          "204": { "description": "Logged out. Cookies cleared. No body." },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Refresh the session",
+        "description": "Uses the sessionId and refreshToken cookies to replace the current session with a new one and sets new cookies. If the refresh token is expired the session is deleted and cookies are cleared. No request validation.",
+        "parameters": [
+          { "$ref": "#/components/parameters/SessionIdCookie" },
+          { "$ref": "#/components/parameters/RefreshTokenCookie" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session refreshed. New cookies are set.",
+            "headers": { "Set-Cookie": { "$ref": "#/components/headers/SetSessionCookies" } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "message": { "type": "string", "example": "Session refreshed" } }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing cookies (\"Missing session credentials\"), session not found (\"Session not found\") or refresh token expired (\"Session token expired\")",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/auth/request-reset-email": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Request a password reset email",
+        "description": "Sends an email with a reset link containing a JWT valid for 15 minutes. For an unknown email the response is still 200 (\"If this email exists, a reset link has been sent\") to avoid leaking which emails are registered.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RequestResetEmailBody" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email sent, or the email is unknown (generic message)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "enum": [
+                        "Password reset email sent successfully",
+                        "If this email exists, a reset link has been sent"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "500": {
+            "description": "Failed to send the email (\"Failed to send the email, please try again later.\") or other server error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Reset the password",
+        "description": "Verifies the JWT from the reset email, sets the new password and deletes all sessions of the user.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ResetPasswordBody" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password changed. All sessions removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "Password reset successfully. Please log in again." }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": {
+            "description": "Invalid or expired token (\"Invalid or expired token\")",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "404": {
+            "description": "User not found (\"User not found\")",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/students": {
+      "get": {
+        "tags": ["Students"],
+        "summary": "List students",
+        "description": "Returns a page of the authenticated user's students. Supports filtering by minimum average mark, gender and a case-insensitive name search.",
+        "security": [{ "cookieAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "number", "minimum": 1, "default": 1 },
+            "description": "Page number. The default of 1 is applied by the handler."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "schema": { "type": "number", "minimum": 5, "maximum": 20, "default": 5 },
+            "description": "Items per page. The default of 5 is applied by the handler."
+          },
+          {
+            "name": "minMark",
+            "in": "query",
+            "schema": { "type": "number", "minimum": 1 },
+            "description": "Only students with avgMark greater than or equal to this value"
+          },
+          {
+            "name": "gender",
+            "in": "query",
+            "schema": { "$ref": "#/components/schemas/Gender" }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Case-insensitive regex match against the student name. Trimmed; an empty string is allowed (no filtering)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of students",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StudentsPage" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "post": {
+        "tags": ["Students"],
+        "summary": "Create a student",
+        "description": "Creates a student owned by the authenticated user.",
+        "security": [{ "cookieAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CreateStudentBody" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Student created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Student" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/students/{studentId}": {
+      "parameters": [{ "$ref": "#/components/parameters/StudentId" }],
+      "get": {
+        "tags": ["Students"],
+        "summary": "Get a student by id",
+        "security": [{ "cookieAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "The student",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Student" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/StudentNotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "patch": {
+        "tags": ["Students"],
+        "summary": "Update a student",
+        "description": "Partially updates a student. At least one field is required.",
+        "security": [{ "cookieAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/UpdateStudentBody" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated student",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Student" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/StudentNotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "delete": {
+        "tags": ["Students"],
+        "summary": "Delete a student",
+        "security": [{ "cookieAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "The deleted student",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Student" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/StudentNotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/users/me/avatar": {
+      "patch": {
+        "tags": ["Users"],
+        "summary": "Upload the current user's avatar",
+        "description": "Accepts a single image (multipart field \"photo\", max 3 MB, mimetype image/*), uploads it to Cloudinary (500x500 fill crop) and stores the URL on the user. No celebrate validation; limits come from the multer middleware.",
+        "security": [{ "cookieAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["photo"],
+                "properties": {
+                  "photo": { "type": "string", "format": "binary", "description": "Image file, up to 3 MB" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Avatar updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "url": { "type": "string", "format": "uri", "description": "Cloudinary URL of the new avatar" } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": {
+            "description": "Server error. Note: in the current code a missing \"photo\" file, a non-image file or a file over 3 MB also end up here, because the controller does not import createHttpError and multer errors are not HttpErrors. In non-production the message contains the stack trace.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "sessionId",
+        "description": "Session auth. The authenticate middleware requires both the sessionId and accessToken cookies (httpOnly, secure, sameSite=none), which are set by /auth/login, /auth/register and /auth/refresh. The access token is valid for 15 minutes, the refresh token for 24 hours. OpenAPI cannot express two cookies in one scheme; the browser sends both automatically."
+      }
+    },
+    "headers": {
+      "SetSessionCookies": {
+        "description": "Sets the sessionId, accessToken (15 min) and refreshToken (24 h) cookies: httpOnly, secure, sameSite=none",
+        "schema": { "type": "string" }
+      }
+    },
+    "parameters": {
+      "StudentId": {
+        "name": "studentId",
+        "in": "path",
+        "required": true,
+        "description": "Student id (must pass mongoose isValidObjectId)",
+        "schema": { "type": "string", "example": "665f1c2e8a1b2c3d4e5f6a7b" }
+      },
+      "SessionIdCookie": {
+        "name": "sessionId",
+        "in": "cookie",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "RefreshTokenCookie": {
+        "name": "refreshToken",
+        "in": "cookie",
+        "required": true,
+        "schema": { "type": "string" }
+      }
+    },
+    "responses": {
+      "ValidationError": {
+        "description": "Request validation failed (celebrate)",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ValidationError" } } }
+      },
+      "Unauthorized": {
+        "description": "Missing session credentials, session not found, access token expired or user not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string",
+                  "enum": [
+                    "Missing session credentials",
+                    "Session not found",
+                    "Access token expired",
+                    "User not found"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "StudentNotFound": {
+        "description": "Student not found (or belongs to another user)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": { "message": { "type": "string", "example": "Student not found" } }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Unexpected server error. In non-production the message is the stack trace.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+    "schemas": {
+      "Gender": {
+        "type": "string",
+        "enum": ["male", "female", "other"]
+      },
+      "RegisterUserBody": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 8 }
+        }
+      },
+      "LoginUserBody": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string" }
+        }
+      },
+      "RequestResetEmailBody": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "email": { "type": "string", "format": "email" }
+        }
+      },
+      "ResetPasswordBody": {
+        "type": "object",
+        "required": ["password", "token"],
+        "properties": {
+          "password": { "type": "string", "minLength": 8 },
+          "token": { "type": "string", "description": "JWT from the reset email" }
+        }
+      },
+      "CreateStudentBody": {
+        "type": "object",
+        "required": ["name", "age", "avgMark", "gender"],
+        "properties": {
+          "name": { "type": "string", "minLength": 3, "maxLength": 250 },
+          "age": { "type": "integer", "minimum": 6 },
+          "onDuty": { "type": "boolean", "description": "Defaults to false (applied by the Mongoose model)", "default": false },
+          "avgMark": { "type": "number", "minimum": 1 },
+          "gender": { "$ref": "#/components/schemas/Gender" }
+        }
+      },
+      "UpdateStudentBody": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "name": { "type": "string", "minLength": 3, "maxLength": 250 },
+          "age": { "type": "integer", "minimum": 6 },
+          "onDuty": { "type": "boolean" },
+          "avgMark": { "type": "number", "minimum": 1 },
+          "gender": { "$ref": "#/components/schemas/Gender" }
+        }
+      },
+      "User": {
+        "type": "object",
+        "description": "User document without the password field",
+        "properties": {
+          "_id": { "type": "string", "example": "665f1c2e8a1b2c3d4e5f6a7b" },
+          "username": { "type": "string", "description": "Set to the email on save when not provided" },
+          "email": { "type": "string", "format": "email" },
+          "avatar": {
+            "type": "string",
+            "format": "uri",
+            "default": "https://ac.goit.global/fullstack/react/default-avatar.jpg"
+          },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "__v": { "type": "integer" }
+        }
+      },
+      "Student": {
+        "type": "object",
+        "properties": {
+          "_id": { "type": "string", "example": "665f1c2e8a1b2c3d4e5f6a7b" },
+          "name": { "type": "string" },
+          "age": { "type": "integer" },
+          "onDuty": { "type": "boolean", "default": false },
+          "avgMark": { "type": "number" },
+          "gender": { "$ref": "#/components/schemas/Gender" },
+          "userId": { "type": "string", "description": "Owner user id" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "__v": { "type": "integer" }
+        }
+      },
+      "StudentsPage": {
+        "type": "object",
+        "properties": {
+          "students": { "type": "array", "items": { "$ref": "#/components/schemas/Student" } },
+          "page": { "type": "number" },
+          "perPage": { "type": "number" },
+          "totalItems": { "type": "integer" },
+          "totalPages": { "type": "integer" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": { "message": { "type": "string" } }
+      },
+      "ValidationError": {
+        "type": "object",
+        "description": "Response format of celebrate's errors() middleware",
+        "properties": {
+          "statusCode": { "type": "integer", "example": 400 },
+          "error": { "type": "string", "example": "Bad Request" },
+          "message": { "type": "string", "example": "Validation failed" },
+          "validation": {
+            "type": "object",
+            "description": "Keyed by segment (body, query, params)",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "source": { "type": "string", "example": "body" },
+                "keys": { "type": "array", "items": { "type": "string" } },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
